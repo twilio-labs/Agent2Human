@@ -1,0 +1,57 @@
+{
+  "$schema": "https://openclaw.ai/schemas/config.json",
+  "$comment": "Hypothetical OpenClaw config with A2H integration (proposed, not yet implemented)",
+
+  "tools": {
+    "exec": {
+      "ask": "a2h",
+      "security": "allowlist",
+      "host": "sandbox",
+      "a2h": {
+        "gateway": "http://localhost:3001",
+        "principal": "did:example:${USER_DID}",
+        "assurance": {
+          "rm *": "HIGH",
+          "rm -rf *": "HIGH",
+          "git push --force *": "HIGH",
+          "sudo *": "HIGH",
+          "git push": "MEDIUM",
+          "npm publish": "MEDIUM",
+          "docker push *": "MEDIUM",
+          "default": "LOW"
+        },
+        "channels": {
+          "HIGH": ["web", "push"],
+          "MEDIUM": ["web", "sms"],
+          "LOW": ["web"]
+        },
+        "ttl_sec": 300
+      }
+    }
+  },
+
+  "routing": {
+    "agents": {
+      "main": {
+        "workspace": "~/.openclaw/workspace",
+        "sandbox": {
+          "mode": "non-main"
+        }
+      }
+    }
+  },
+
+  "$notes": {
+    "ask_modes": {
+      "off": "No approvals required",
+      "on-miss": "Prompt for commands not in allowlist (current default)",
+      "always": "Every command requires approval",
+      "a2h": "Route approvals through A2H Gateway (proposed)"
+    },
+    "assurance_levels": {
+      "HIGH": "Passkey/WebAuthn - destructive operations, financial transactions",
+      "MEDIUM": "OTP via SMS/Email - significant changes, external actions",
+      "LOW": "Link click confirmation - low-risk operations"
+    }
+  }
+}

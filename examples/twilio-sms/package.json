@@ -1,0 +1,17 @@
+{
+  "name": "a2h-twilio-sms-example",
+  "version": "1.0.0",
+  "description": "A2H Gateway example with Twilio SMS channel",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "demo": "node agent-simulator.js",
+    "reply": "node simulate-reply.js",
+    "reply:api": "node reply-via-api.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "twilio": "^4.23.0"
+  }
+}

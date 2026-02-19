@@ -1,0 +1,692 @@
+openapi: 3.1.0
+
+info:
+  title: A2H (Agent-to-Human) Protocol API
+  description: |
+    The A2H Protocol defines a standardized interface for agent-to-human communication.
+    This specification describes the protocol messages, states, and API endpoints for
+    implementing an A2H Gateway.
+
+    The protocol supports five core intent types:
+    - **INFORM**: One-way notifications to humans
+    - **COLLECT**: Gather structured input from humans
+    - **AUTHORIZE**: Request approval with authentication
+    - **ESCALATE**: Hand off to human support channels
+    - **RESULT**: Report task completion or outcomes
+  version: 1.0.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  contact:
+    name: A2H Protocol Working Group
+    url: https://github.com/twilio-labs/a2h-spec
+
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+  - url: https://api.example.com
+    description: Production server
+
+tags:
+  - name: Intent
+    description: Core A2H intent operations
+  - name: Status
+    description: Interaction status queries
+  - name: Discovery
+    description: Gateway capability discovery
+
+paths:
+  /.well-known/a2h:
+    get:
+      summary: Discover gateway capabilities
+      description: Returns the capabilities and configuration of the A2H gateway
+      operationId: getGatewayCapabilities
+      tags:
+        - Discovery
+      responses:
+        '200':
+          description: Gateway capabilities
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayCapabilities'
+
+  /v1/intent:
+    post:
+      summary: Send an A2H intent message
+      description: Submit an intent message for delivery to a human
+      operationId: sendIntent
+      tags:
+        - Intent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/A2HMessage'
+      responses:
+        '200':
+          description: Intent accepted and processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Unprocessable entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/status/{interactionId}:
+    get:
+      summary: Get interaction status
+      description: Query the current status of an interaction
+      operationId: getInteractionStatus
+      tags:
+        - Status
+      parameters:
+        - name: interactionId
+          in: path
+          required: true
+          description: The interaction ID returned from the intent endpoint
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Interaction status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InteractionStatus'
+        '404':
+          description: Interaction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/cancel/{interactionId}:
+    post:
+      summary: Cancel an interaction
+      description: Cancel a pending or active interaction
+      operationId: cancelInteraction
+      tags:
+        - Intent
+      parameters:
+        - name: interactionId
+          in: path
+          required: true
+          description: The interaction ID to cancel
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Interaction cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '404':
+          description: Interaction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Interaction cannot be cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/nonce:
+    get:
+      summary: Request a one-time nonce
+      description: |
+        Request a one-time nonce for replay protection (optional).
+        See framework specification Section 1.10.4.
+      operationId: getNonce
+      tags:
+        - Intent
+      responses:
+        '200':
+          description: Nonce generated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - nonce
+                  - expires_at
+                properties:
+                  nonce:
+                    type: string
+                  expires_at:
+                    type: string
+                    format: date-time
+
+components:
+  schemas:
+    # Core Message Types
+    A2HMessage:
+      type: object
+      description: |
+        Common data envelope for all A2H messages.
+        See framework specification Section 1.2.
+      required:
+        - type
+        - message_id
+        - agent_id
+        - principal_id
+      properties:
+        a2h_version:
+          type: string
+          default: "1.0"
+          description: Protocol version
+        a2h_min_version:
+          type: string
+          description: Minimum protocol version the sender supports
+        interaction_id:
+          type: string
+          format: uuid
+          description: UUIDv7 for a single human-agent interaction loop
+        type:
+          $ref: '#/components/schemas/IntentType'
+        message_id:
+          type: string
+          description: UUIDv7 per message; unique identifier for idempotency
+          minLength: 1
+          maxLength: 256
+        responds_to:
+          type: string
+          description: message_id of the message this responds to
+        agent_id:
+          type: string
+          description: Software entity acting on behalf of a human (e.g., did:web:agent.example.com)
+        principal_id:
+          type: string
+          description: Stable, non-routable identifier for the human recipient (e.g., did:example:alice)
+          minLength: 1
+          maxLength: 256
+        channel:
+          $ref: '#/components/schemas/ChannelBinding'
+        render:
+          $ref: '#/components/schemas/RenderContent'
+        links:
+          type: object
+          description: References to related protocol objects
+          properties:
+            acp_ref:
+              type: string
+            ap2_mandate:
+              type: string
+            a2a_thread:
+              type: string
+            mcp_session:
+              type: string
+        params:
+          type: object
+          description: Additional type-specific parameters
+          additionalProperties: true
+        ttl_sec:
+          type: integer
+          description: Time-to-live in seconds
+          minimum: 30
+          maximum: 86400
+          default: 300
+        assurance:
+          $ref: '#/components/schemas/AssuranceConfig'
+        explanation_bundle:
+          type: object
+          description: Context for why this action is being requested
+          properties:
+            why:
+              type: string
+        callback:
+          $ref: '#/components/schemas/CallbackConfig'
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/Component'
+          description: UI components for COLLECT intents
+        created_at:
+          type: string
+          format: date-time
+        signature:
+          type: string
+          description: Detached JWS over JCS-canonicalized payload
+
+    ChannelBinding:
+      type: object
+      description: |
+        Channel delivery configuration. See framework Section 1.9 and 1.13.
+        principal_id is who; channel.address is where.
+      required:
+        - type
+        - address
+      properties:
+        type:
+          type: string
+          description: Channel type (sms, email, whatsapp, push, voice, wallet, chat)
+        address:
+          type: string
+          description: Routable delivery address using valid URI scheme (tel:, mailto:, etc.)
+        nonce:
+          type: string
+          description: Base64url-encoded nonce for replay protection
+        expires_at:
+          type: string
+          format: date-time
+        render:
+          $ref: '#/components/schemas/RenderContent'
+        fallback:
+          type: array
+          description: Fallback channels to try if primary fails (Section 1.13.3)
+          items:
+            type: object
+            required:
+              - type
+              - address
+            properties:
+              type:
+                type: string
+              address:
+                type: string
+
+    IntentType:
+      type: string
+      enum:
+        - INFORM
+        - COLLECT
+        - AUTHORIZE
+        - ESCALATE
+        - RESULT
+        - RESPONSE
+        - ERROR
+      description: The type of A2H message
+
+    RenderContent:
+      type: object
+      required:
+        - body
+      properties:
+        title:
+          type: string
+          maxLength: 256
+        body:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        footer:
+          type: string
+          maxLength: 512
+        icon:
+          type: string
+          maxLength: 128
+          description: Icon identifier or URL
+
+    AssuranceConfig:
+      type: object
+      properties:
+        level:
+          type: string
+          enum:
+            - LOW
+            - MEDIUM
+            - HIGH
+          default: LOW
+        required_factors:
+          type: array
+          items:
+            type: string
+          description: Required authentication factors (e.g., passkey.webauthn.v1, otp.v1)
+
+    CallbackConfig:
+      type: object
+      required:
+        - url
+        - secret
+      properties:
+        url:
+          type: string
+          format: uri
+          description: HTTPS URL to receive webhook callbacks
+        secret:
+          type: string
+          description: Shared secret for webhook signature verification
+
+    Component:
+      type: object
+      required:
+        - type
+        - name
+      properties:
+        type:
+          type: string
+          enum:
+            - TEXT
+            - SELECT
+            - MULTISELECT
+            - CHECKBOX
+            - RADIO
+            - TEXTAREA
+            - NUMBER
+            - DATE
+            - TIME
+            - DATETIME
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        label:
+          type: string
+          maxLength: 256
+        required:
+          type: boolean
+          default: false
+        validation:
+          type: object
+          properties:
+            pattern:
+              type: string
+            min:
+              type: number
+            max:
+              type: number
+            minLength:
+              type: integer
+            maxLength:
+              type: integer
+        options:
+          type: array
+          items:
+            type: object
+            properties:
+              value:
+                type: string
+              label:
+                type: string
+
+    # Response Types
+    IntentResponse:
+      type: object
+      required:
+        - interaction_id
+        - state
+        - created_at
+        - ttl_sec
+      properties:
+        interaction_id:
+          type: string
+          format: uuid
+        state:
+          $ref: '#/components/schemas/InteractionState'
+        created_at:
+          type: string
+          format: date-time
+        ttl_sec:
+          type: integer
+        channel_id:
+          type: string
+          description: Selected channel for delivery
+
+    InteractionStatus:
+      type: object
+      required:
+        - interaction_id
+        - state
+        - created_at
+        - updated_at
+      properties:
+        interaction_id:
+          type: string
+          format: uuid
+        state:
+          $ref: '#/components/schemas/InteractionState'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        response:
+          $ref: '#/components/schemas/InteractionResponse'
+        error:
+          $ref: '#/components/schemas/ErrorInfo'
+
+    InteractionState:
+      type: string
+      enum:
+        - PENDING
+        - SENT
+        - WAITING_INPUT
+        - ANSWERED
+        - EXPIRED
+        - CANCELLED
+        - FAILED
+      description: |
+        Current state of the interaction.
+        State machine: PENDING → SENT → WAITING_INPUT → ANSWERED | EXPIRED
+        CANCELLED and FAILED are terminal states reachable from PENDING or WAITING_INPUT.
+
+    InteractionResponse:
+      type: object
+      description: The human's RESPONSE to an intent
+      properties:
+        type:
+          type: string
+          const: RESPONSE
+        responds_to:
+          type: string
+          description: The message_id of the original intent
+        interaction_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - ANSWERED
+        decision:
+          type: string
+          enum:
+            - APPROVE
+            - DECLINE
+          description: The human's decision
+        decided_at:
+          type: string
+          format: date-time
+        data:
+          type: object
+          additionalProperties: true
+          description: Collected data (for COLLECT responses)
+        evidence:
+          $ref: '#/components/schemas/Evidence'
+        signature:
+          type: string
+          description: Detached JWS signed by gateway
+
+    Evidence:
+      type: object
+      required:
+        - factor
+        - proof
+      properties:
+        factor:
+          type: string
+          description: Authentication factor used (e.g., passkey.webauthn.v1, otp.sms.v1, push.v1)
+        proof:
+          type: object
+          additionalProperties: true
+          description: Factor-specific proof of human authentication
+
+    # Error Types
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorCode'
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+    ErrorInfo:
+      type: object
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    ErrorCode:
+      type: string
+      enum:
+        - ERR.EXPIRED
+        - ERR.INVALID_REQUEST
+        - ERR.INVALID_PRINCIPAL
+        - ERR.CHANNEL_UNAVAILABLE
+        - ERR.CONFLICT
+        - ERR.REPLAY_REJECTED
+        - ERR.RATE_LIMITED
+        - ERR.DELIVERY_FAILED
+        - ERR.QUIET_HOURS
+      description: |
+        Protocol-defined error codes per framework specification.
+        ERR.EXPIRED: TTL elapsed before human responded.
+        ERR.INVALID_REQUEST: Malformed or missing required fields.
+        ERR.INVALID_PRINCIPAL: Unknown or invalid principal_id.
+        ERR.CHANNEL_UNAVAILABLE: No channel could deliver the message.
+        ERR.CONFLICT: Interaction already in terminal state.
+        ERR.REPLAY_REJECTED: Duplicate message_id, stale timestamp, or invalid nonce.
+        ERR.RATE_LIMITED: Too many requests; retry after retry_after_sec.
+        ERR.DELIVERY_FAILED: All channels (including fallbacks) failed.
+        ERR.QUIET_HOURS: Message suppressed due to quiet hours policy.
+
+    # Discovery Types
+    GatewayCapabilities:
+      type: object
+      required:
+        - a2h_supported
+        - channels
+        - factors
+      description: |
+        Gateway capability discovery document served at /.well-known/a2h.
+        Matches the framework specification Section 1.4.
+      properties:
+        a2h_supported:
+          type: array
+          items:
+            type: string
+          description: Supported A2H protocol versions (e.g., ["1.0"])
+        channels:
+          type: array
+          items:
+            type: string
+          description: Supported delivery channels (e.g., ["sms", "email", "push", "voice"])
+        factors:
+          type: array
+          items:
+            type: string
+          description: Supported authentication factors (e.g., ["passkey.webauthn.v1", "otp.v1"])
+        max_ttl_sec:
+          type: integer
+          description: Maximum TTL the gateway will accept
+        locales:
+          type: array
+          items:
+            type: string
+          description: Supported locales (e.g., ["en-US"])
+        jwks_uri:
+          type: string
+          format: uri
+          description: URL for the gateway's JSON Web Key Set
+        quiet_hours:
+          type: object
+          properties:
+            start:
+              type: string
+              description: Quiet hours start time (HH:MM)
+            end:
+              type: string
+              description: Quiet hours end time (HH:MM)
+            tz:
+              type: string
+              description: Timezone (e.g., America/Denver)
+        limits:
+          type: object
+          properties:
+            max_single_usd:
+              type: number
+            daily_usd:
+              type: number
+        auth:
+          type: object
+          description: Supported authentication methods (Section 1.8.7)
+          properties:
+            methods:
+              type: array
+              items:
+                type: string
+                enum:
+                  - api_key
+                  - oauth2
+                  - mtls
+            oauth2:
+              type: object
+              properties:
+                token_endpoint:
+                  type: string
+                  format: uri
+        replay_protection:
+          type: object
+          description: Replay protection configuration (Section 1.10.2)
+          properties:
+            idempotency_window_sec:
+              type: integer
+            timestamp_tolerance_sec:
+              type: integer
+            nonce_endpoint:
+              type: string
+        webhooks:
+          type: object
+          description: Webhook support configuration (Section 1.12.8)
+          properties:
+            supported:
+              type: boolean
+            retry_attempts:
+              type: integer
+            timeout_sec:
+              type: integer

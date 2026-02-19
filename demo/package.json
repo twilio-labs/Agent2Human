@@ -1,0 +1,13 @@
+{
+  "name": "a2h-demo",
+  "version": "1.0.0",
+  "description": "A2H Protocol Demo - WebAuthn/Passkey approval flow",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "@simplewebauthn/server": "^13.2.2"
+  }
+}

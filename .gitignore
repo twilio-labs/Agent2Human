@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Environment files (may contain secrets)
+.env
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Package lock files (examples/demos - not a published library)
+package-lock.json
+
+# Claude Code local settings
+.claude/
